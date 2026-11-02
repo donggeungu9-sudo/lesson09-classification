@@ -16,7 +16,7 @@ st.title("🧠 뇌졸중 예측 실습실")
 st.markdown("---")
 
 # 2. 데이터 불러오기 (캐싱)
-DATA_URL = "https://raw.githubusercontent.com/greatsong/modudata/main/data/stroke.csv"
+DATA_URL = "https://raw.githubusercontent.com/donggeungu9-sudo/data/refs/heads/main/stroke.csv"
 
 @st.cache_data
 def load_data():
