@@ -12,7 +12,7 @@ st.set_page_config(
 st.title("🔍 데이터 탐색 페이지")
 st.markdown("---")
 
-# 1. 동일한 데이터 동일 URL 및 UTF-8 인코딩으로 불러오기 (요청하신 주소 적용)
+# 1. 데이터 불러오기
 DATA_URL = "https://raw.githubusercontent.com/donggeungu9-sudo/data/refs/heads/main/stroke.csv"
 
 @st.cache_data
