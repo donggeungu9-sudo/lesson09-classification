@@ -221,7 +221,7 @@ st.dataframe(metrics_summary_df, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------------
-# 의사결정트리(질문으로 답하는 모델) 시각화 추가
+# 의사결정트리 구조 시각화
 # ---------------------------------------------------------
 st.subheader("🌲 의사결정트리(질문으로 답하는 모델) 구조 시각화")
 korean_feature_names = [REVERSE_FEATURE_MAP[col] for col in selected_cols]
@@ -245,4 +245,64 @@ st.markdown("---")
 st.subheader("🔍 오류 분석 목록 (놓친 환자 & 헛짚은 사람)")
 
 model_choice = st.selectbox(
-    "분
+    "분석할 모델을 선택해 주세요:",
+    options=[
+        "로지스틱 회귀(확률로 답하는 모델)",
+        "의사결정트리(질문으로 답하는 모델)",
+        "훈련용에서 많은 쪽으로만 답하는 모델"
+    ]
+)
+
+if model_choice.startswith("로지스틱"):
+    chosen_preds = y_pred_log
+    chosen_fn, chosen_fp = log_fn, log_fp
+elif model_choice.startswith("의사결정"):
+    chosen_preds = y_pred_tree
+    chosen_fn, chosen_fp = tree_fn, tree_tp
+else:
+    chosen_preds = y_pred_dummy
+    chosen_fn, chosen_fp = dummy_fn, dummy_fp
+
+df_analysis = df_test.copy()
+df_analysis["pred"] = chosen_preds
+
+fn_df = df_analysis[(df_analysis["stroke"] == 1) & (df_analysis["pred"] == 0)].copy()
+fp_df = df_analysis[(df_analysis["stroke"] == 0) & (df_analysis["pred"] == 1)].copy()
+
+fn_df = fn_df.sort_values(by="age", ascending=False).reset_index(drop=True)
+fp_df = fp_df.sort_values(by="age", ascending=False).reset_index(drop=True)
+
+fn_total = len(fn_df)
+fp_total = len(fp_df)
+
+list_col1, list_col2 = st.columns(2)
+
+def format_error_dataframe(sub_df):
+    if sub_df.empty:
+        return pd.DataFrame(columns=["번호", "나이", "평균 혈당", "고혈압 여부", "심장병 여부"])
+    
+    formatted = pd.DataFrame({
+        "번호": sub_df.index + 1,
+        "나이": sub_df["age"],
+        "평균 혈당": sub_df["avg_glucose_level"],
+        "고혈압 여부": sub_df["hypertension"].map({1: "있음 (1)", 0: "없음 (0)"}),
+        "심장병 여부": sub_df["heart_disease"].map({1: "있음 (1)", 0: "없음 (0)"})
+    })
+    return formatted
+
+with list_col1:
+    display_fn = fn_df.head(20)
+    st.write(f"##### 🩺 실제 뇌졸중인데 아니라고 예측 (놓친 환자) - 총 {fn_total:,}명")
+    st.dataframe(format_error_dataframe(display_fn), use_container_width=True)
+    if fn_total > 20:
+        st.caption(f"ℹ️ 전체 {fn_total:,}명 중 앞 20명만 표시되었습니다.")
+
+with list_col2:
+    display_fp = fp_df.head(20)
+    st.write(f"##### ⚠️ 실제 아닌데 뇌졸중이라고 예측 (헛짚은 사람) - 총 {fp_total:,}명")
+    st.dataframe(format_error_dataframe(display_fp), use_container_width=True)
+    if fp_total > 20:
+        st.caption(f"ℹ️ 전체 {fp_total:,}명 중 앞 20명만 표시되었습니다.")
+
+st.markdown("---")
+st.write(f"📌 **확인**: 놓친 환자(FN) 수 **{fn_total}명**은 혼동행렬의 FN 칸 수와 정확히 일치하며, 헛짚은 사람(FP) 수 **{fp_total}명**은 혼동행렬의 FP 칸 수와 정확히 일치합니다.")
