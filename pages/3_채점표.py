@@ -4,7 +4,7 @@ import streamlit as st
 import plotly.express as px
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, export_graphviz
 from sklearn.preprocessing import StandardScaler
 from sklearn.dummy import DummyClassifier
 
@@ -52,7 +52,7 @@ if len(selected_korean) < 2:
 
 selected_cols = [FEATURE_MAP[k] for k in selected_korean]
 
-# 데이터 분할 (10명 중 앞 3명 테스트용 고정 -> 1,533명 테스트셋)
+# 데이터 분할 (10명 중 앞 3명 테스트용 고정)
 df_sorted = df_raw.copy().reset_index(drop=True)
 test_mask = (df_sorted.index % 10) < 3
 train_mask = ~test_mask
@@ -179,4 +179,70 @@ with cm_col1:
 
 with cm_col2:
     st.write("##### 의사결정트리(질문으로 답하는 모델)")
-    st.dataframe
+    st.dataframe(make_cm_df(tree_tn, tree_fp, tree_fn, tree_tp), use_container_width=True)
+
+with cm_col3:
+    st.write("##### 훈련용에서 많은 쪽으로만 답하는 모델")
+    st.dataframe(make_cm_df(dummy_tn, dummy_fp, dummy_fn, dummy_tp), use_container_width=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------------
+# 정확도·재현율·정밀도·F1 비교 표
+# ---------------------------------------------------------
+st.subheader("🏆 성능 지표 비교표")
+
+metrics_summary_df = pd.DataFrame([
+    {
+        "모델명": "로지스틱 회귀(확률로 답하는 모델)",
+        "정확도 (Accuracy)": log_metrics["accuracy_str"],
+        "재현율 (Recall)": log_metrics["recall_str"],
+        "정밀도 (Precision)": log_metrics["precision_str"],
+        "F1 점수": log_metrics["f1_str"]
+    },
+    {
+        "모델명": "의사결정트리(질문으로 답하는 모델)",
+        "정확도 (Accuracy)": tree_metrics["accuracy_str"],
+        "재현율 (Recall)": tree_metrics["recall_str"],
+        "정밀도 (Precision)": tree_metrics["precision_str"],
+        "F1 점수": tree_metrics["f1_str"]
+    },
+    {
+        "모델명": "훈련용에서 많은 쪽으로만 답하는 모델",
+        "정확도 (Accuracy)": dummy_metrics["accuracy_str"],
+        "재현율 (Recall)": dummy_metrics["recall_str"],
+        "정밀도 (Precision)": dummy_metrics["precision_str"],
+        "F1 점수": dummy_metrics["f1_str"]
+    }
+])
+
+st.dataframe(metrics_summary_df, use_container_width=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------------
+# 의사결정트리(질문으로 답하는 모델) 시각화 추가
+# ---------------------------------------------------------
+st.subheader("🌲 의사결정트리(질문으로 답하는 모델) 구조 시각화")
+korean_feature_names = [REVERSE_FEATURE_MAP[col] for col in selected_cols]
+dot_data = export_graphviz(
+    tree_clf,
+    out_file=None,
+    feature_names=korean_feature_names,
+    class_names=["아님", "뇌졸중"],
+    filled=True,
+    rounded=True,
+    special_characters=True,
+    precision=2
+)
+st.graphviz_chart(dot_data)
+
+st.markdown("---")
+
+# ---------------------------------------------------------
+# 오류 분석 목록 (놓친 환자 vs 헛짚은 사람)
+# ---------------------------------------------------------
+st.subheader("🔍 오류 분석 목록 (놓친 환자 & 헛짚은 사람)")
+
+model_choice = st.selectbox(
+    "분
