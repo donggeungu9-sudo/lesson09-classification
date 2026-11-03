@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, export_graphviz
 from sklearn.preprocessing import StandardScaler
 from sklearn.dummy import DummyClassifier
 
@@ -47,7 +47,7 @@ selected_korean = st.multiselect(
     default=default_selected_korean
 )
 
-# 2개 미만 고를 시 경고 및 중단
+# 2개 마 미만 고를 시 경고 및 중단
 if len(selected_korean) < 2:
     st.warning("⚠️ 속성을 최소 2개 이상 선택해야 모델 학습 및 시각화를 진행할 수 있습니다.")
     st.stop()
@@ -82,15 +82,12 @@ X_test_scaled = scaler.transform(X_test_raw)
 # ---------------------------------------------------------
 # 모델 학습
 # ---------------------------------------------------------
-# 1) 로지스틱 회귀 (확률 모델)
 log_reg = LogisticRegression(random_state=42)
 log_reg.fit(X_train_scaled, y_train)
 
-# 2) 의사결정트리 (질문 모델 - 질문 최대 3번, 최소 샘플 수 5개, 난수 고정)
 tree_clf = DecisionTreeClassifier(max_depth=3, min_samples_leaf=5, random_state=42)
 tree_clf.fit(X_train_raw, y_train)
 
-# 3) Dummy Classifier (입력을 전혀 보지 않고 훈련용 최다 범주로 예측)
 dummy_clf = DummyClassifier(strategy="most_frequent")
 dummy_clf.fit(X_train_raw, y_train)
 
@@ -153,7 +150,6 @@ if x_korean == y_korean:
 x_col = FEATURE_MAP[x_korean]
 y_col = FEATURE_MAP[y_korean]
 
-# 고르지 않은 다른 속성들의 중앙값 계산 (테스트 데이터 기준)
 other_cols = [c for c in selected_cols if c not in [x_col, y_col]]
 other_medians_test = {c: df_test[c].median() for c in other_cols}
 
@@ -163,7 +159,6 @@ if other_cols:
 else:
     st.write("📌 선택된 2개의 속성을 그대로 가로축과 세로축에 매핑하였습니다.")
 
-# 그리드 포인트 생성
 x_min, x_max = df_test[x_col].min(), df_test[x_col].max()
 y_min, y_max = df_test[y_col].min(), df_test[y_col].max()
 
@@ -179,7 +174,6 @@ xx, yy = np.meshgrid(
     np.linspace(y_min_pad, y_max_pad, grid_res)
 )
 
-# 그리드용 데이터프레임 구성
 grid_df = pd.DataFrame({
     x_col: xx.ravel(),
     y_col: yy.ravel()
@@ -189,16 +183,13 @@ for c in other_cols:
 
 grid_df = grid_df[selected_cols]
 
-# 의사결정트리 영역 예측
 z_tree = tree_clf.predict(grid_df).reshape(xx.shape)
 
-# 로지스틱 회귀 확률 예측 (0.5 결정 경계선 계산용)
 grid_scaled = scaler.transform(grid_df)
 z_log_prob = log_reg.predict_proba(grid_scaled)[:, 1].reshape(xx.shape)
 
 fig = go.Figure()
 
-# 1) 의사결정트리 분할 영역 (옅은 색 contour)
 fig.add_trace(go.Contour(
     x=np.linspace(x_min_pad, x_max_pad, grid_res),
     y=np.linspace(y_min_pad, y_max_pad, grid_res),
@@ -209,7 +200,6 @@ fig.add_trace(go.Contour(
     hoverinfo="skip"
 ))
 
-# 2) 로지스틱 회귀 0.5 결정 경계 선
 has_contour_line = (z_log_prob.min() <= 0.5 <= z_log_prob.max())
 
 if has_contour_line:
@@ -225,10 +215,7 @@ if has_contour_line:
 else:
     st.info("ℹ️ 현재 선택된 속성 조합 및 고정값 조건에서는 로지스틱 회귀 모델의 0.5 확률 결정 경계선이 그림 범위를 벗어납니다.")
 
-# 3) 테스트 데이터 산점도
 df_test_plot = df_test.copy()
-df_test_plot["뇌졸중 여부"] = df_test_plot["stroke"].map({1: "뇌졸중 (1)", 0: "아님 (0)"})
-
 normal_points = df_test_plot[df_test_plot["stroke"] == 0]
 stroke_points = df_test_plot[df_test_plot["stroke"] == 1]
 
@@ -261,61 +248,27 @@ st.plotly_chart(fig, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------------
-# 의사결정트리 구조 (DOT 문자열 graphviz 시각화)
+# 의사결정트리 구조 (export_graphviz를 활용한 표준 렌더링)
 # ---------------------------------------------------------
 st.subheader("🌲 의사결정트리 구조 시각화")
 
+korean_feature_names = [REVERSE_FEATURE_MAP[col] for col in selected_cols]
+
+dot_data = export_graphviz(
+    tree_clf,
+    out_file=None,
+    feature_names=korean_feature_names,
+    class_names=["아님", "뇌졸중"],
+    filled=True,
+    rounded=True,
+    special_characters=True,
+    precision=2
+)
+
+st.graphviz_chart(dot_data)
+
+# 요약 정보 계산
 tree_structure = tree_clf.tree_
-
-def build_dot(tree, feature_names):
-    dot = ['digraph Tree {', 'node [shape=box, style="filled, rounded", color="black", fontname="helvetica"] ;', 'edge [fontname="helvetica"] ;']
-    
-    def recurse(node_id, depth):
-        is_leaf = tree.children_left[node_id] == tree.children_right[node_id]
-        n_samples = int(tree.n_node_samples[node_id])
-        val = tree.value[node_id][0]
-        stroke_count = int(val[1])
-        ratio = (stroke_count / n_samples * 100) if n_samples > 0 else 0.0
-        
-        label_lines = [
-            f"훈련용 인원: {n_samples:,}명",
-            f"실제 뇌졸중: {stroke_count:,}명",
-            f"비율: {ratio:.1f}%"
-        ]
-        
-        if not is_leaf:
-            feat_idx = tree.feature[node_id]
-            threshold = tree.threshold[node_id]
-            feat_korean = REVERSE_FEATURE_MAP[feature_names[feat_idx]]
-            question_str = f"{feat_korean} <= {threshold:.2f}"
-            label_text = f"{question_str}\\n" + "\\n".join(label_lines)
-            fillcolor = "#ffffff"
-        else:
-            pred_class = np.argmax(val)
-            pred_label = "뇌졸중" if pred_class == 1 else "아님"
-            label_text = f"답: {pred_label}\\n" + "\\n".join(label_lines)
-            fillcolor = "#ffe6e6" if pred_class == 1 else "#e6f2ff"
-        
-        dot.append(f'{node_id} [label="{label_text}", fillcolor="{fillcolor}"] ;')
-        
-        if not is_leaf:
-            left_id = tree.children_left[node_id]
-            right_id = tree.children_right[node_id]
-            
-            dot.append(f'{node_id} -> {left_id} [label="예", angle=45, labeldistance=2.5] ;')
-            dot.append(f'{node_id} -> {right_id} [label="아니요", angle=-45, labeldistance=2.5] ;')
-            
-            recurse(left_id, depth + 1)
-            recurse(right_id, depth + 1)
-            
-    recurse(0, 0)
-    dot.append('}')
-    return "\\n".join(dot)
-
-dot_string = build_dot(tree_structure, selected_cols)
-st.graphviz_chart(dot_string)
-
-# 요약 정보 출력
 leaf_nodes = [i for i in range(tree_structure.node_count) if tree_structure.children_left[i] == tree_structure.children_right[i]]
 total_leaf_count = len(leaf_nodes)
 
@@ -326,7 +279,7 @@ for leaf_id in leaf_nodes:
         no_stroke_leaf_count += 1
 
 used_feature_indices = set(tree_structure.feature[i] for i in range(tree_structure.node_count) if tree_structure.children_left[i] != tree_structure.children_right[i])
-used_features_korean = [REVERSE_FEATURE_MAP[selected_cols[i]] for i in used_feature_indices]
+used_features_korean = [korean_feature_names[i] for i in used_feature_indices]
 
-st.write(f"📌 **답을 내는 마디(리프 노드)**: 모두 **{total_leaf_count}칸**이고 그중 **{no_stroke_leaf_count}칸**이 **아님**이라고 답합니다.")
+st.write(f"📌 **답을 내는 최종 마디(리프 노드)**: 모두 **{total_leaf_count}칸**이고 그중 **{no_stroke_leaf_count}칸**이 **아님**이라고 답합니다.")
 st.write(f"📌 **고른 속성 가운데 이 나무가 실제로 물은 속성**: {', '.join(used_features_korean) if used_features_korean else '없음'}")
